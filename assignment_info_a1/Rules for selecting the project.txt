@@ -1,0 +1,7 @@
+The assignment is group based and each group has a numeric number associated with it.
+
+(Group number mod 3)+1 = 1, select Library Management project
+
+(Group number mod 3)+1 = 2, select Inventory Management project
+
+(Group number mod 3)+1 = 3, select Equipment Rental Management			
