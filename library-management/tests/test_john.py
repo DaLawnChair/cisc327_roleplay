@@ -572,3 +572,73 @@ def test_view_specific_member_nonexistant(client):
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Member not found"}
+
+
+def test_edit_member_name(client):
+    """Editing a name saves it while preserving the other member details."""
+    create_response = client.post(
+        "/members", json={"name": "John", "email": "john@example.com"}
+    )
+    assert create_response.status_code == 201
+    original_member = create_response.get_json()
+    member_id = original_member["id"]
+
+    response = client.put(f"/members/{member_id}", json={"name": "John Zhou"})
+
+    assert response.status_code == 200
+    expected_member = {**original_member, "name": "John Zhou"}
+    assert response.get_json() == expected_member
+
+    get_response = client.get(f"/members/{member_id}")
+    assert get_response.status_code == 200
+    assert get_response.get_json() == expected_member
+
+
+def test_edit_member_email(client):
+    """Editing an email saves it while preserving the other member details."""
+    create_response = client.post(
+        "/members", json={"name": "John", "email": "john@example.com"}
+    )
+    assert create_response.status_code == 201
+    original_member = create_response.get_json()
+    member_id = original_member["id"]
+
+    response = client.put(
+        f"/members/{member_id}", json={"email": "john.zhou@example.com"}
+    )
+
+    assert response.status_code == 200
+    expected_member = {**original_member, "email": "john.zhou@example.com"}
+    assert response.get_json() == expected_member
+
+    get_response = client.get(f"/members/{member_id}")
+    assert get_response.status_code == 200
+    assert get_response.get_json() == expected_member
+
+
+def test_delete_member(client):
+    """Deleting a member removes them while preserving other members."""
+    create_response = client.post(
+        "/members", json={"name": "John", "email": "john@example.com"}
+    )
+    other_response = client.post(
+        "/members", json={"name": "Jane", "email": "jane@example.com"}
+    )
+    assert create_response.status_code == 201
+    assert other_response.status_code == 201
+    member_id = create_response.get_json()["id"]
+    expected_remaining_member = other_response.get_json()
+
+    response = client.delete(f"/members/{member_id}")
+
+    assert response.status_code == 204
+    assert response.data == b""
+
+    get_response = client.get(f"/members/{member_id}")
+    assert get_response.status_code == 404
+    assert get_response.get_json() == {"error": "Member not found"}
+
+    list_response = client.get("/members")
+    assert list_response.status_code == 200
+    assert list_response.get_json() == [expected_remaining_member]
+
