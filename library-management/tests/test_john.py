@@ -417,3 +417,43 @@ def test_edit_book_details_and_copy_counts(client):
     assert get_response.status_code == 200
     assert get_response.get_json() == expected_book
 
+def test_delete_book(client):
+    """Deleting a book removes it while preserving other catalog entries."""
+    book_to_delete = {
+        "title": "The Hobbit",
+        "author": "J. R. R. Tolkien",
+        "isbn": "978-0547928227",
+        "total_copies": 3,
+    }
+    other_book = {
+        "title": "Clean Code",
+        "author": "Robert C. Martin",
+        "isbn": "978-0132350884",
+        "total_copies": 2,
+    }
+    create_response = client.post("/books", json=book_to_delete)
+    other_response = client.post("/books", json=other_book)
+    assert create_response.status_code == 201
+    assert other_response.status_code == 201
+    book_id = create_response.get_json()["id"]
+    expected_remaining_book = {
+        "id": other_response.get_json()["id"],
+        **other_book,
+        "available_copies": 2,
+    }
+
+    delete_fake_book_response = client.get(f"/books/12313")
+    assert delete_fake_book_response.status_code == 404
+    assert delete_fake_book_response.get_json() == {"error": "Book not found"}
+
+    delete_response = client.delete(f"/books/{book_id}")
+    assert delete_response.status_code == 204
+    assert delete_response.data == b""
+
+    get_response = client.get(f"/books/{book_id}")
+    assert get_response.status_code == 404
+    assert get_response.get_json() == {"error": "Book not found"}
+
+    catalog_response = client.get("/books")
+    assert catalog_response.status_code == 200
+    assert catalog_response.get_json() == [expected_remaining_book]
