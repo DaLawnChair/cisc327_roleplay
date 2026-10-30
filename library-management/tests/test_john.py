@@ -198,3 +198,39 @@ def test_list_books_shows_copy_availability_empty_catalog(client):
     assert response.status_code == 200
     assert response.get_json() == []
 
+
+def test_view_specific_book(client):
+    """Looking up a book by ID returns only that book and its details."""
+    other_book = {
+        "title": "Clean Code",
+        "author": "Robert C. Martin",
+        "isbn": "978-0132350884",
+        "total_copies": 1,
+    }
+    target_book = {
+        "title": "The Hobbit",
+        "author": "J. R. R. Tolkien",
+        "isbn": "978-0547928227",
+        "total_copies": 3,
+    }
+    other_response = client.post("/books", json=other_book)
+    target_response = client.post("/books", json=target_book)
+    assert other_response.status_code == 201
+    assert target_response.status_code == 201
+    book_id = target_response.get_json()["id"]
+
+    response = client.get(f"/books/{book_id}")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "id": book_id, **target_book, "available_copies": 3
+    }
+
+def test_view_specific_book_book_id_does_not_exist(client):
+    """Looking up a nonexistent book ID returns a not-found error."""
+    response = client.get("/books/999")
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "Book not found"}
+
+
