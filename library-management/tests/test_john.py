@@ -17,8 +17,7 @@ def test_add_book(client):
     assert catalog_response.status_code == 200
     assert catalog_response.get_json() == [expected_book]
 
-
-def test_list_books_shows_copy_availability(client):
+def test_list_books_shows_copy_availability_non_empty_catalog(client):
     """The catalog lists every book with its current total and available copies."""
     # add books
     first_book = {
@@ -67,4 +66,11 @@ def test_list_books_shows_copy_availability(client):
         "id": second_id, **second_book, "available_copies": 3
     }
 
+
+def test_list_books_shows_copy_availability_empty_catalog(client):
+    """An empty catalog returns no books or copy availability entries."""
+    response = client.get("/books")
+
+    assert response.status_code == 200
+    assert response.get_json() == []
 
