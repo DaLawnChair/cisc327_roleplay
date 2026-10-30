@@ -508,3 +508,67 @@ def test_register_member_missing_email(client):
         f"got {response.status_code}."
     )
 
+def test_list_members(client):
+    """Listing members returns every registered member and their details."""
+    from datetime import date
+
+    membership_date = date.today().isoformat()
+    first_member = {"name": "John", "email": "john@example.com"}
+    second_member = {"name": "Jane", "email": "jane@example.com"}
+    first_response = client.post("/members", json=first_member)
+    second_response = client.post("/members", json=second_member)
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+    first_id = first_response.get_json()["id"]
+    second_id = second_response.get_json()["id"]
+
+    response = client.get("/members")
+
+    assert response.status_code == 200
+    members = response.get_json()
+    assert len(members) == 2
+    members_by_id = {member["id"]: member for member in members}
+    assert members_by_id == {
+        first_id: {
+            "id": first_id, **first_member, "membership_date": membership_date
+        },
+        second_id: {
+            "id": second_id, **second_member, "membership_date": membership_date
+        },
+    }
+
+def test_list_members_empty_list(client):
+    """Listing members returns an empty list when none are registered."""
+    response = client.get("/members")
+
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+
+def test_view_specific_member(client):
+    """Looking up a member by ID returns only that member and their details."""
+    from datetime import date
+
+    membership_date = date.today().isoformat()
+    other_member = {"name": "John", "email": "john@example.com"}
+    target_member = {"name": "Jane", "email": "jane@example.com"}
+    other_response = client.post("/members", json=other_member)
+    target_response = client.post("/members", json=target_member)
+    assert other_response.status_code == 201
+    assert target_response.status_code == 201
+    member_id = target_response.get_json()["id"]
+
+    response = client.get(f"/members/{member_id}")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "id": member_id, **target_member, "membership_date": membership_date
+    }
+
+
+def test_view_specific_member_nonexistant(client):
+    """Looking up a nonexistent member ID returns a not-found error."""
+    response = client.get("/members/999")
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "Member not found"}
