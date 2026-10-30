@@ -457,3 +457,54 @@ def test_delete_book(client):
     catalog_response = client.get("/books")
     assert catalog_response.status_code == 200
     assert catalog_response.get_json() == [expected_remaining_book]
+
+
+
+def test_register_member(client):
+    """Registering a member saves their details and membership date."""
+    from datetime import date
+
+    payload = {"name": "John", "email": "john@example.com"}
+    registration_date = date.today().isoformat()
+
+    response = client.post("/members", json=payload)
+
+    assert response.status_code == 201
+    expected_member = {
+        "id": 1, **payload, "membership_date": registration_date
+    }
+    assert response.get_json() == expected_member
+
+    get_response = client.get("/members/1")
+    assert get_response.status_code == 200
+    assert get_response.get_json() == expected_member
+
+def test_register_member_missing_name(client):
+    """Registration without a name should fail without creating a member."""
+    # Capture server errors as responses so the assertion explains the failure.
+    client.application.config["PROPAGATE_EXCEPTIONS"] = False
+
+    response = client.post("/members", json={"email": "john@example.com"})
+
+    members_response = client.get("/members")
+    assert members_response.status_code == 200
+    assert members_response.get_json() == []
+    assert response.status_code == 400, (
+        "Registration without a name should return 400; "
+        f"got {response.status_code}."
+    )
+
+def test_register_member_missing_email(client):
+    """Registration without an email should fail without creating a member."""
+    client.application.config["PROPAGATE_EXCEPTIONS"] = False
+
+    response = client.post("/members", json={"name": "John"})
+
+    members_response = client.get("/members")
+    assert members_response.status_code == 200
+    assert members_response.get_json() == []
+    assert response.status_code == 400, (
+        "Registration without an email should return 400; "
+        f"got {response.status_code}."
+    )
+
