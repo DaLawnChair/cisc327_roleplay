@@ -388,3 +388,32 @@ def test_search_books_query_does_not_exit(client):
     assert no_match_response.get_json() == []
 
 
+def test_edit_book_details_and_copy_counts(client):
+    """Editing a book saves its updated details and copy counts."""
+    original_book = {
+        "title": "The Hobbit",
+        "author": "J. R. R. Tolkien",
+        "isbn": "978-0547928227",
+        "total_copies": 3,
+    }
+    create_response = client.post("/books", json=original_book)
+    assert create_response.status_code == 201
+    book_id = create_response.get_json()["id"]
+
+    updated_book = {
+        "title": "The Fellowship of the Ring",
+        "author": "John Ronald Reuel Tolkien",
+        "isbn": "978-0547928210",
+        "total_copies": 5,
+        "available_copies": 5,
+    }
+    update_response = client.put(f"/books/{book_id}", json=updated_book)
+
+    assert update_response.status_code == 200
+    expected_book = {"id": book_id, **updated_book}
+    assert update_response.get_json() == expected_book
+
+    get_response = client.get(f"/books/{book_id}")
+    assert get_response.status_code == 200
+    assert get_response.get_json() == expected_book
+
