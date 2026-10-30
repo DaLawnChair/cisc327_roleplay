@@ -234,3 +234,157 @@ def test_view_specific_book_book_id_does_not_exist(client):
     assert response.get_json() == {"error": "Book not found"}
 
 
+def test_search_books_by_title(client):
+    """Search finds partial title matches regardless of case."""
+    books = [
+        {
+            "title": "The Hobbit",
+            "author": "J. R. R. Tolkien",
+            "isbn": "978-0547928227",
+            "total_copies": 2,
+        },
+        {
+            "title": "The Fellowship of the Ring",
+            "author": "J. R. R. Tolkien",
+            "isbn": "978-0547928210",
+            "total_copies": 1,
+        },
+        {
+            "title": "Clean Code",
+            "author": "Robert C. Martin",
+            "isbn": "978-0132350884",
+            "total_copies": 3,
+        },
+    ]
+    expected_books = []
+    for book in books:
+        response = client.post("/books", json=book)
+        assert response.status_code == 201
+        expected_books.append(
+            {"id": response.get_json()["id"], **book,
+             "available_copies": book["total_copies"]}
+        )
+
+    # book exists, via title
+    title_response = client.get("/books", query_string={"search": "HOBB"})
+    assert title_response.status_code == 200
+    assert title_response.get_json() == [expected_books[0]]
+
+    author_response = client.get("/books", query_string={"search": "TOLK"})
+    assert author_response.status_code == 200
+    matches_by_id = {book["id"]: book for book in author_response.get_json()}
+    assert len(author_response.get_json()) == 2
+    assert matches_by_id == {book["id"]: book for book in expected_books[:2]}
+
+def test_search_books_by_author(client):
+    """Search finds partial author matches regardless of case."""
+    books = [
+        {
+            "title": "The Hobbit",
+            "author": "J. R. R. Tolkien",
+            "isbn": "978-0547928227",
+            "total_copies": 2,
+        },
+        {
+            "title": "The Fellowship of the Ring",
+            "author": "J. R. R. Tolkien",
+            "isbn": "978-0547928210",
+            "total_copies": 1,
+        },
+        {
+            "title": "Clean Code",
+            "author": "Robert C. Martin",
+            "isbn": "978-0132350884",
+            "total_copies": 3,
+        },
+    ]
+    expected_books = []
+    for book in books:
+        response = client.post("/books", json=book)
+        assert response.status_code == 201
+        expected_books.append(
+            {"id": response.get_json()["id"], **book,
+             "available_copies": book["total_copies"]}
+        )
+
+    # book exists, via author
+    author_response = client.get("/books", query_string={"search": "TOLK"})
+    assert author_response.status_code == 200
+    matches_by_id = {book["id"]: book for book in author_response.get_json()}
+    assert len(author_response.get_json()) == 2
+    assert matches_by_id == {book["id"]: book for book in expected_books[:2]}
+
+def test_search_books_by_isbn(client):
+    """Search finds book based on exact isbn."""
+    books = [
+        {
+            "title": "The Hobbit",
+            "author": "J. R. R. Tolkien",
+            "isbn": "978-0547928227",
+            "total_copies": 2,
+        },
+        {
+            "title": "The Fellowship of the Ring",
+            "author": "J. R. R. Tolkien",
+            "isbn": "978-0547928210",
+            "total_copies": 1,
+        },
+        {
+            "title": "Clean Code",
+            "author": "Robert C. Martin",
+            "isbn": "978-0132350884",
+            "total_copies": 3,
+        },
+    ]
+    expected_books = []
+    for book in books:
+        response = client.post("/books", json=book)
+        assert response.status_code == 201
+        expected_books.append(
+            {"id": response.get_json()["id"], **book,
+             "available_copies": book["total_copies"]}
+        )
+
+    # book exists, via isbn
+    isbn_response = client.get("/books", query_string={"search": "978-0132350884"})
+    assert isbn_response.status_code == 200, f"ISBN search failed. Expected status 200, but got {isbn_response.status_code}"
+    assert isbn_response.get_json() == [expected_books[3]]
+
+
+
+def test_search_books_query_does_not_exit(client):
+    """Search should not come up with a case."""
+    books = [
+        {
+            "title": "The Hobbit",
+            "author": "J. R. R. Tolkien",
+            "isbn": "978-0547928227",
+            "total_copies": 2,
+        },
+        {
+            "title": "The Fellowship of the Ring",
+            "author": "J. R. R. Tolkien",
+            "isbn": "978-0547928210",
+            "total_copies": 1,
+        },
+        {
+            "title": "Clean Code",
+            "author": "Robert C. Martin",
+            "isbn": "978-0132350884",
+            "total_copies": 3,
+        },
+    ]
+    expected_books = []
+    for book in books:
+        response = client.post("/books", json=book)
+        assert response.status_code == 201
+        expected_books.append(
+            {"id": response.get_json()["id"], **book,
+             "available_copies": book["total_copies"]}
+        )
+    # doesn't exist
+    no_match_response = client.get("/books", query_string={"search": "nonexistent"})
+    assert no_match_response.status_code == 200
+    assert no_match_response.get_json() == []
+
+
