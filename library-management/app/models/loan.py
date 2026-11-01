@@ -11,6 +11,7 @@ class Loan:
         self.loan_date = loan_date or date.today()
         self.due_date = due_date
         self.return_date = return_date
+        self.fine_settled = False
 
     def to_dict(self):
         return {
