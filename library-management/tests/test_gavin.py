@@ -129,3 +129,65 @@ def test_full_checkout_return_checkout_cycle(client):
     assert second.status_code == 201
     assert second.get_json()["member_id"] == bob["id"]
     assert client.get(f"/books/{book['id']}").get_json()["available_copies"] == 0
+
+
+# ---------- look up loans ----------
+
+def test_list_loans_filtered_by_book_id(client):
+    book1 = make_book(client, "Dune")
+    book2 = make_book(client, "Emma")
+    member = make_member(client)
+    checkout(client, book1["id"], member["id"])
+    checkout(client, book2["id"], member["id"])
+
+    loans = client.get(f"/loans?book_id={book2['id']}").get_json()
+
+    assert len(loans) == 1
+    assert loans[0]["book_id"] == book2["id"]
+
+
+def test_list_loans_filtered_by_member_id(client):
+    # R1/R31: a member's loans must be retrievable by member.
+    # three books so that book ids and member ids do not line up
+    make_book(client, "Dune")
+    book2 = make_book(client, "Emma")
+    book3 = make_book(client, "Ulysses")
+    alice = make_member(client)
+    bob = make_member(client, "Bob", "bob@example.com")
+    checkout(client, book2["id"], alice["id"])   # book id 2, member id 1
+    checkout(client, book3["id"], bob["id"])     # book id 3, member id 2
+
+    loans = client.get(f"/loans?member_id={bob['id']}").get_json()
+
+    assert len(loans) == 1
+    assert loans[0]["member_id"] == bob["id"]
+
+
+# ---------- renew a loan ----------
+
+def test_renew_extends_due_date(client):
+    book = make_book(client)
+    member = make_member(client)
+    loan = checkout(client, book["id"], member["id"]).get_json()
+
+    response = client.put(f"/loans/{loan['id']}/renew")
+
+    assert response.status_code == 200
+    assert response.get_json()["due_date"] > loan["due_date"]
+    stored = client.get(f"/loans?book_id={book['id']}").get_json()[0]
+    assert stored["due_date"] == response.get_json()["due_date"]
+
+
+def test_renew_returned_loan_is_rejected(client):
+    book = make_book(client)
+    member = make_member(client)
+    loan = checkout(client, book["id"], member["id"]).get_json()
+    client.put(f"/loans/{loan['id']}/return")
+
+    response = client.put(f"/loans/{loan['id']}/renew")
+
+    assert response.status_code == 400
+
+
+def test_renew_nonexistent_loan_returns_404(client):
+    assert client.put("/loans/999/renew").status_code == 404
