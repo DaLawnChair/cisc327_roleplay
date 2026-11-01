@@ -712,3 +712,65 @@ def test_fine_for_missing_loan_returns_404(client):
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Loan not found"}
+
+
+@pytest.mark.parametrize("via_ui", [False, True])
+def test_outstanding_fines_block_checkout_without_changing_state(client, today, via_ui):
+    book = client.post("/books", json={
+        "title": "T", "author": "A", "isbn": "1", "total_copies": 2,
+    }).get_json()
+    loan = client.post("/loans", json={"book_id": book["id"], "member_id": 1}).get_json()
+    store.loans[loan["id"]].due_date = today - timedelta(days=3)
+    before = client.get("/loans").get_json()
+
+    payload = {"book_id": book["id"], "member_id": 1}
+    response = (client.post("/ui/loans", data=payload) if via_ui
+                else client.post("/loans", json=payload))
+
+    assert response.status_code == 409
+    if not via_ui:
+        assert response.get_json()["outstanding_fine"] == 0.75
+    assert client.get("/loans").get_json() == before
+    assert client.get(f'/books/{book["id"]}').get_json()["available_copies"] == 1
+
+
+def test_return_and_settlement_restore_checkout_only_after_all_fines_clear(client, today):
+    book = client.post("/books", json={
+        "title": "T", "author": "A", "isbn": "1", "total_copies": 5,
+    }).get_json()
+    payload = {"book_id": book["id"], "member_id": 1}
+    loan_ids = [client.post("/loans", json=payload).get_json()["id"] for _ in range(2)]
+    for loan_id in loan_ids:
+        store.loans[loan_id].due_date = today - timedelta(days=2)
+
+    assert client.put(f"/loans/{loan_ids[0]}/fine/settle").status_code == 409
+    assert not store.loans[loan_ids[0]].fine_settled
+    for loan_id in loan_ids:
+        assert client.put(f"/loans/{loan_id}/return").status_code == 200
+    assert client.post("/loans", json=payload).status_code == 409
+    assert client.post("/loans", json={**payload, "member_id": 2}).status_code == 201
+
+    for index, loan_id in enumerate(loan_ids):
+        response = client.put(f"/loans/{loan_id}/fine/settle")
+        assert response.status_code == 200
+        assert response.get_json() == {"loan_id": loan_id, "fine_amount": 0.0}
+        assert client.get(f"/loans/{loan_id}/fine").get_json()["fine_amount"] == 0.0
+        if index == 0:
+            assert client.post("/loans", json=payload).status_code == 409
+    assert client.put(f"/loans/{loan_ids[0]}/fine/settle").status_code == 200
+    assert client.post("/loans", json=payload).status_code == 201
+
+
+def test_settlement_missing_loan_does_not_create_records(client):
+    assert client.put("/loans/999/fine/settle").status_code == 404
+    assert client.get("/loans").get_json() == []
+
+
+def test_due_today_does_not_block_checkout(client, today):
+    book = client.post("/books", json={
+        "title": "T", "author": "A", "isbn": "1", "total_copies": 2,
+    }).get_json()
+    payload = {"book_id": book["id"], "member_id": 1}
+    loan = client.post("/loans", json=payload).get_json()
+    store.loans[loan["id"]].due_date = today
+    assert client.post("/loans", json=payload).status_code == 201
