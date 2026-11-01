@@ -191,3 +191,75 @@ def test_renew_returned_loan_is_rejected(client):
 
 def test_renew_nonexistent_loan_returns_404(client):
     assert client.put("/loans/999/renew").status_code == 404
+
+
+# ---------- create a reservation ----------
+
+def test_create_reservation_returns_unfulfilled_hold(client):
+    book = make_book(client)
+    member = make_member(client)
+
+    response = client.post("/reservations", json={
+        "book_id": book["id"], "member_id": member["id"],
+    })
+
+    assert response.status_code == 201
+    reservation = response.get_json()
+    assert reservation["book_id"] == book["id"]
+    assert reservation["member_id"] == member["id"]
+    assert reservation["fulfilled"] is False
+    assert reservation["reservation_date"] == date.today().isoformat()
+
+
+def test_create_reservation_for_nonexistent_book_returns_404(client):
+    member = make_member(client)
+    response = client.post("/reservations", json={"book_id": 999, "member_id": member["id"]})
+    assert response.status_code == 404
+    assert client.get("/reservations").get_json() == []
+
+
+def test_create_reservation_for_nonexistent_member_returns_404(client):
+    book = make_book(client)
+    response = client.post("/reservations", json={"book_id": book["id"], "member_id": 999})
+    assert response.status_code == 404
+    assert client.get("/reservations").get_json() == []
+
+
+def test_hold_on_lent_book_blocks_checkout_by_other_member(client):
+    # R2: a member who places a hold on a lent book must receive it at its
+    # earliest availability, so another member cannot take it first.
+    book = make_book(client, copies=1)
+    alice = make_member(client)
+    bob = make_member(client, "Bob", "bob@example.com")
+    carol = make_member(client, "Carol", "carol@example.com")
+    loan = checkout(client, book["id"], alice["id"]).get_json()
+    client.post("/reservations", json={"book_id": book["id"], "member_id": bob["id"]})
+    client.put(f"/loans/{loan['id']}/return")
+
+    response = checkout(client, book["id"], carol["id"])
+
+    assert response.status_code in (400, 409)
+
+
+# ---------- list reservations ----------
+
+def test_list_reservations_empty_initially(client):
+    response = client.get("/reservations")
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+
+def test_list_reservations_filtered_by_book_and_member(client):
+    book1 = make_book(client, "Dune")
+    book2 = make_book(client, "Emma")
+    alice = make_member(client)
+    bob = make_member(client, "Bob", "bob@example.com")
+    client.post("/reservations", json={"book_id": book1["id"], "member_id": alice["id"]})
+    client.post("/reservations", json={"book_id": book2["id"], "member_id": alice["id"]})
+    client.post("/reservations", json={"book_id": book2["id"], "member_id": bob["id"]})
+
+    assert len(client.get("/reservations").get_json()) == 3
+    by_book = client.get(f"/reservations?book_id={book2['id']}").get_json()
+    assert {r["member_id"] for r in by_book} == {alice["id"], bob["id"]}
+    by_member = client.get(f"/reservations?member_id={bob['id']}").get_json()
+    assert len(by_member) == 1 and by_member[0]["book_id"] == book2["id"]
