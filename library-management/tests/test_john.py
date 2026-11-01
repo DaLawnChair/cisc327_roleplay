@@ -642,3 +642,73 @@ def test_delete_member(client):
     assert list_response.status_code == 200
     assert list_response.get_json() == [expected_remaining_member]
 
+
+# =============== testing loans:
+from datetime import date, timedelta
+
+import pytest
+
+from app import store
+from app.models.loan import Loan
+from app.routes import loans
+
+@pytest.fixture
+def today(monkeypatch):
+    """Keep fine calculations independent of the day the tests run."""
+    fixed_today = date(2026, 3, 15)
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return fixed_today
+
+    monkeypatch.setattr(loans, "date", FixedDate)
+    return fixed_today
+
+
+@pytest.mark.parametrize(
+    "days_overdue, expected_fine",
+    [(-7, 0.0), (-1, 0.0), (0, 0.0), (1, 0.25), (2, 0.50), (7, 1.75), (365, 91.25)],
+)
+def test_fine_is_25_cents_per_overdue_day(client, today, days_overdue, expected_fine):
+    store.loans[1] = Loan(
+        id=1,
+        book_id=1,
+        member_id=1,
+        loan_date=today - timedelta(days=400),
+        due_date=today - timedelta(days=days_overdue),
+    )
+
+    response = client.get("/loans/1/fine")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"loan_id": 1, "fine_amount": expected_fine}
+
+
+@pytest.mark.parametrize(
+    "return_offset, expected_fine",
+    [(-1, 0.0), (0, 0.0), (1, 0.25), (5, 1.25)],
+)
+def test_returned_loan_fine_stops_at_return_date(client, today, return_offset, expected_fine):
+    due_date = today - timedelta(days=10)
+    store.loans[1] = Loan(
+        id=1,
+        book_id=1,
+        member_id=1,
+        loan_date=due_date - timedelta(days=14),
+        due_date=due_date,
+        return_date=due_date + timedelta(days=return_offset),
+    )
+
+    response = client.get("/loans/1/fine")
+
+    assert response.status_code == 200
+    print(response.get_json(), {"loan_id": 1, "fine_amount": expected_fine})
+    assert response.get_json() == {"loan_id": 1, "fine_amount": expected_fine}
+
+
+def test_fine_for_missing_loan_returns_404(client):
+    response = client.get("/loans/999/fine")
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "Loan not found"}
