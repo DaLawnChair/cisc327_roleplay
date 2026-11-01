@@ -6,6 +6,7 @@ from app import store
 from app.models.book import Book
 from app.models.loan import Loan
 from app.models.member import Member
+from app.routes.loans import member_outstanding_fines
 
 views_bp = Blueprint("views", __name__)
 
@@ -60,6 +61,8 @@ def loans_page():
     if request.method == "POST":
         book_id = int(request.form["book_id"])
         member_id = int(request.form["member_id"])
+        if member_outstanding_fines(member_id) > 0:
+            return "Outstanding fines must be settled before checkout", 409
         book = store.books.get(book_id)
         if book is not None:
             book.available_copies -= 1
