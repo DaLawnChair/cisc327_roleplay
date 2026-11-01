@@ -54,6 +54,22 @@ app working without a REST client, and calls the same in-memory store.
 | POST | `/loans` | Check out a book (`book_id`, `member_id`) |
 | PUT | `/loans/<id>/return` | Return a loaned book |
 | GET | `/loans?member_id=&book_id=` | Look up loans |
+| GET | `/loans/<id>/fine` | Get the outstanding loan fine |
+| PUT | `/loans/<id>/fine/settle` | Record full fine settlement after return (no body) |
+
+### Checkout restrictions
+
+API and web-form checkouts reject members with outstanding fines (HTTP 409).
+Fines accrue at $0.25 per overdue day, stop growing on return, and remain
+outstanding until settled. The API rejection includes `outstanding_fine`, the
+member's total unpaid amount. Other members' fines do not affect checkout.
+Returning an item alone does not clear its fine. Staff can record full settlement
+using `PUT /loans/<id>/fine/settle`; the item must first be returned (otherwise
+HTTP 409). Repeating settlement is harmless. Once every outstanding fine is
+settled, checkout is allowed again. Partial payments and other penalties are
+outside this feature. Settlement records share the application's in-memory
+storage and reset on restart; this endpoint records settlement, not a payment
+processor transaction.
 
 ## Tests
 
