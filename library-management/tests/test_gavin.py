@@ -83,3 +83,49 @@ def test_checkout_fails_for_nonexistent_member(client):
 
     assert response.status_code == 404
     assert client.get(f"/books/{book['id']}").get_json()["available_copies"] == 1
+
+
+# ---------- return a book ----------
+
+def test_return_sets_return_date_and_restores_copy(client):
+    book = make_book(client, copies=2)
+    member = make_member(client)
+    loan = checkout(client, book["id"], member["id"]).get_json()
+
+    response = client.put(f"/loans/{loan['id']}/return")
+
+    assert response.status_code == 200
+    assert response.get_json()["return_date"] == date.today().isoformat()
+    assert client.get(f"/books/{book['id']}").get_json()["available_copies"] == 2
+
+
+def test_return_same_loan_twice_is_rejected(client):
+    book = make_book(client)
+    member = make_member(client)
+    loan = checkout(client, book["id"], member["id"]).get_json()
+    client.put(f"/loans/{loan['id']}/return")
+
+    response = client.put(f"/loans/{loan['id']}/return")
+
+    assert response.status_code == 400
+    # copies must not be added back a second time
+    assert client.get(f"/books/{book['id']}").get_json()["available_copies"] == 1
+
+
+def test_return_nonexistent_loan_returns_404(client):
+    response = client.put("/loans/999/return")
+    assert response.status_code == 404
+
+
+def test_full_checkout_return_checkout_cycle(client):
+    book = make_book(client, copies=1)
+    alice = make_member(client)
+    bob = make_member(client, "Bob", "bob@example.com")
+
+    first = checkout(client, book["id"], alice["id"]).get_json()
+    client.put(f"/loans/{first['id']}/return")
+    second = checkout(client, book["id"], bob["id"])
+
+    assert second.status_code == 201
+    assert second.get_json()["member_id"] == bob["id"]
+    assert client.get(f"/books/{book['id']}").get_json()["available_copies"] == 0
