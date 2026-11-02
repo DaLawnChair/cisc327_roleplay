@@ -6,7 +6,7 @@ from app import store
 from app.models.book import Book
 from app.models.loan import Loan
 from app.models.member import Member
-from app.routes.loans import member_outstanding_fines
+from app.routes.loans import fulfil_hold, hold_conflict, member_outstanding_fines
 
 views_bp = Blueprint("views", __name__)
 
@@ -65,7 +65,11 @@ def loans_page():
             return "Outstanding fines must be settled before checkout", 409
         book = store.books.get(book_id)
         if book is not None:
+            conflict = hold_conflict(book, member_id)
+            if conflict:
+                return conflict, 409
             book.available_copies -= 1
+            fulfil_hold(book_id, member_id)
             loan_id = store.next_id("loan")
             loan = Loan(
                 id=loan_id,
