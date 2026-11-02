@@ -10,6 +10,19 @@ FINE_PER_DAY = 0.25  # dollars charged per day overdue
 loans_bp = Blueprint("loans", __name__, url_prefix="/loans")
 
 
+def outstanding_fine(loan):
+    if loan.fine_settled:
+        return 0.0
+    end_date = loan.return_date or date.today()
+    days_overdue = max(0, (end_date - loan.due_date).days)
+    return round(days_overdue * FINE_PER_DAY, 2)
+
+
+def member_outstanding_fines(member_id):
+    return round(sum(outstanding_fine(loan) for loan in store.loans.values()
+                     if loan.member_id == member_id), 2)
+
+
 @loans_bp.route("", methods=["GET"])
 def list_loans():
     results = list(store.loans.values())
@@ -28,6 +41,11 @@ def checkout_book():
     book = store.books.get(data["book_id"])
     if book is None:
         return jsonify({"error": "Book not found"}), 404
+
+    outstanding = member_outstanding_fines(data["member_id"])
+    if outstanding > 0:
+        return jsonify({"error": "Outstanding fines must be settled before checkout",
+                        "outstanding_fine": outstanding}), 409
 
     book.available_copies -= 1
 
@@ -75,11 +93,16 @@ def get_fine(loan_id):
     if loan is None:
         return jsonify({"error": "Loan not found"}), 404
 
-    # BUG: always uses date.today() as the end date, even when the book has
-    # already been returned. A returned loan should use loan.return_date so
-    # the fine is fixed at the moment of return — but that line is missing here.
-    end_date = date.today()
-    days_overdue = max(0, (end_date - loan.due_date).days)
-    fine_amount = round(days_overdue * FINE_PER_DAY, 2)
+    return jsonify({"loan_id": loan_id, "fine_amount": outstanding_fine(loan)})
 
-    return jsonify({"loan_id": loan_id, "fine_amount": fine_amount})
+
+@loans_bp.route("/<int:loan_id>/fine/settle", methods=["PUT"])
+def settle_fine(loan_id):
+    """Record full settlement at the front desk after the item is returned."""
+    loan = store.loans.get(loan_id)
+    if loan is None:
+        return jsonify({"error": "Loan not found"}), 404
+    if loan.return_date is None:
+        return jsonify({"error": "Return the loan before settling its fine"}), 409
+    loan.fine_settled = True
+    return jsonify({"loan_id": loan_id, "fine_amount": outstanding_fine(loan)})
