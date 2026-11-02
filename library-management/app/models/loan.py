@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 LOAN_PERIOD_DAYS = 14
+RENEWAL_DAYS = 7  # R18: a renewal gives 7 days from the day it is made
 
 
 class Loan:

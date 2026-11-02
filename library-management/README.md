@@ -54,6 +54,9 @@ app working without a REST client, and calls the same in-memory store.
 | POST | `/loans` | Check out a book (`book_id`, `member_id`) |
 | PUT | `/loans/<id>/return` | Return a loaned book |
 | GET | `/loans?member_id=&book_id=` | Look up loans |
+| PUT | `/loans/<id>/renew` | Renew a loan: due date becomes today + 7 days (409 if another member has a hold) |
+| POST | `/reservations` | Place a hold on a book (`book_id`, `member_id`) |
+| GET | `/reservations?book_id=&member_id=` | List holds, optionally filtered |
 | GET | `/loans/<id>/fine` | Get the outstanding loan fine |
 | PUT | `/loans/<id>/fine/settle` | Record full fine settlement after return (no body) |
 
@@ -70,6 +73,15 @@ settled, checkout is allowed again. Partial payments and other penalties are
 outside this feature. Settlement records share the application's in-memory
 storage and reset on restart; this endpoint records settlement, not a payment
 processor transaction.
+
+### Holds
+
+Holds are served in the order they were placed. A checkout (API or web form) is
+refused with HTTP 409 when every available copy is held for members ahead in the
+queue, or when no copies are available. When the member at the front of the queue
+checks out the book, their hold is marked `fulfilled: true`. A loan cannot be
+renewed (HTTP 409) while another member has a hold on the book; otherwise a
+renewal sets the due date to 7 days from the day of renewal and can be repeated.
 
 ## Tests
 

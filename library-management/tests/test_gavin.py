@@ -165,7 +165,7 @@ def test_list_loans_filtered_by_member_id(client):
 
 # ---------- renew a loan ----------
 
-def test_renew_extends_due_date(client):
+def test_renew_sets_due_date_to_7_days_from_today(client):
     book = make_book(client)
     member = make_member(client)
     loan = checkout(client, book["id"], member["id"]).get_json()
@@ -173,7 +173,7 @@ def test_renew_extends_due_date(client):
     response = client.put(f"/loans/{loan['id']}/renew")
 
     assert response.status_code == 200
-    assert response.get_json()["due_date"] > loan["due_date"]
+    assert response.get_json()["due_date"] == (date.today() + timedelta(days=7)).isoformat()
     stored = client.get(f"/loans?book_id={book['id']}").get_json()[0]
     assert stored["due_date"] == response.get_json()["due_date"]
 
@@ -263,3 +263,65 @@ def test_list_reservations_filtered_by_book_and_member(client):
     assert {r["member_id"] for r in by_book} == {alice["id"], bob["id"]}
     by_member = client.get(f"/reservations?member_id={bob['id']}").get_json()
     assert len(by_member) == 1 and by_member[0]["book_id"] == book2["id"]
+
+
+# ---------- enhancement: holds enforcement (R2, R18) ----------
+
+def test_reserving_member_gets_held_book_and_hold_is_fulfilled(client):
+    book = make_book(client, copies=1)
+    alice = make_member(client)
+    bob = make_member(client, "Bob", "bob@example.com")
+    loan = checkout(client, book["id"], alice["id"]).get_json()
+    hold = client.post("/reservations", json={"book_id": book["id"], "member_id": bob["id"]}).get_json()
+    client.put(f"/loans/{loan['id']}/return")
+
+    response = checkout(client, book["id"], bob["id"])
+
+    assert response.status_code == 201
+    assert response.get_json()["member_id"] == bob["id"]
+    reservations = client.get(f"/reservations?member_id={bob['id']}").get_json()
+    assert reservations[0]["id"] == hold["id"]
+    assert reservations[0]["fulfilled"] is True
+
+
+def test_spare_copy_can_be_borrowed_but_held_copy_cannot(client):
+    book = make_book(client, copies=2)
+    bob = make_member(client, "Bob", "bob@example.com")
+    carol = make_member(client, "Carol", "carol@example.com")
+    dave = make_member(client, "Dave", "dave@example.com")
+    client.post("/reservations", json={"book_id": book["id"], "member_id": bob["id"]})
+
+    first = checkout(client, book["id"], carol["id"])   # 2 copies, 1 held: one is spare
+    second = checkout(client, book["id"], dave["id"])   # last copy is held for Bob
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.get_json()["error"] == "Book is on hold for another member"
+    assert client.get(f"/books/{book['id']}").get_json()["available_copies"] == 1
+
+
+def test_renew_blocked_when_another_member_has_hold(client):
+    book = make_book(client, copies=1)
+    alice = make_member(client)
+    bob = make_member(client, "Bob", "bob@example.com")
+    loan = checkout(client, book["id"], alice["id"]).get_json()
+    client.post("/reservations", json={"book_id": book["id"], "member_id": bob["id"]})
+
+    response = client.put(f"/loans/{loan['id']}/renew")
+
+    assert response.status_code == 409
+    stored = client.get(f"/loans?book_id={book['id']}").get_json()[0]
+    assert stored["due_date"] == loan["due_date"]  # due date unchanged
+
+
+def test_renew_can_be_repeated_when_no_holds(client):
+    book = make_book(client)
+    member = make_member(client)
+    loan = checkout(client, book["id"], member["id"]).get_json()
+    expected = (date.today() + timedelta(days=7)).isoformat()
+
+    first = client.put(f"/loans/{loan['id']}/renew")
+    second = client.put(f"/loans/{loan['id']}/renew")
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert second.get_json()["due_date"] == expected

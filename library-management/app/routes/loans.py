@@ -3,7 +3,8 @@ from datetime import date, timedelta
 from flask import Blueprint, jsonify, request
 
 from app import store
-from app.models.loan import Loan, LOAN_PERIOD_DAYS
+from app.models.loan import Loan, RENEWAL_DAYS
+from app.models.reservation import active_holds
 
 FINE_PER_DAY = 0.25  # dollars charged per day overdue
 
@@ -21,6 +22,31 @@ def outstanding_fine(loan):
 def member_outstanding_fines(member_id):
     return round(sum(outstanding_fine(loan) for loan in store.loans.values()
                      if loan.member_id == member_id), 2)
+
+
+def hold_conflict(book, member_id):
+    """Return an error message if holds or stock stop this member borrowing the book.
+
+    Holds are served in the order they were placed (R2): a copy is free for this
+    member only if there are more available copies than holds placed ahead of them.
+    """
+    holds = active_holds(store.reservations.values(), book.id)
+    own = next((h for h in holds if h.member_id == member_id), None)
+    ahead = [h for h in holds
+             if h.member_id != member_id and (own is None or h.id < own.id)]
+    if book.available_copies - len(ahead) > 0:
+        return None
+    if ahead:
+        return "Book is on hold for another member"
+    return "No copies available; place a hold instead"
+
+
+def fulfil_hold(book_id, member_id):
+    """Mark this member's oldest hold on the book as fulfilled, if they have one."""
+    for hold in active_holds(store.reservations.values(), book_id):
+        if hold.member_id == member_id:
+            hold.fulfilled = True
+            return
 
 
 @loans_bp.route("", methods=["GET"])
@@ -47,7 +73,12 @@ def checkout_book():
         return jsonify({"error": "Outstanding fines must be settled before checkout",
                         "outstanding_fine": outstanding}), 409
 
+    conflict = hold_conflict(book, data["member_id"])
+    if conflict:
+        return jsonify({"error": conflict}), 409
+
     book.available_copies -= 1
+    fulfil_hold(book.id, data["member_id"])
 
     loan_id = store.next_id("loan")
     loan = Loan(
@@ -83,7 +114,13 @@ def renew_loan(loan_id):
     if loan.return_date is not None:
         return jsonify({"error": "Loan already returned"}), 400
 
-    loan.due_date = loan.due_date + timedelta(days=LOAN_PERIOD_DAYS)
+    # R18: no renewal while another member has a hold on this book
+    if any(h.member_id != loan.member_id
+           for h in active_holds(store.reservations.values(), loan.book_id)):
+        return jsonify({"error": "Book is on hold for another member"}), 409
+
+    # R18: renewal gives 7 days starting from the day it is made
+    loan.due_date = date.today() + timedelta(days=RENEWAL_DAYS)
     return jsonify(loan.to_dict())
 
 
