@@ -17,3 +17,9 @@ class Reservation:
             "reservation_date": self.reservation_date.isoformat(),
             "fulfilled": self.fulfilled,
         }
+
+
+def active_holds(reservations, book_id):
+    """Unfulfilled reservations for a book, oldest first (the hold queue)."""
+    holds = [r for r in reservations if r.book_id == book_id and not r.fulfilled]
+    return sorted(holds, key=lambda r: r.id)
