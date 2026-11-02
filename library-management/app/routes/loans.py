@@ -114,7 +114,13 @@ def renew_loan(loan_id):
     if loan.return_date is not None:
         return jsonify({"error": "Loan already returned"}), 400
 
-    loan.due_date = loan.due_date + timedelta(days=LOAN_PERIOD_DAYS)
+    # R18: no renewal while another member has a hold on this book
+    if any(h.member_id != loan.member_id
+           for h in active_holds(store.reservations.values(), loan.book_id)):
+        return jsonify({"error": "Book is on hold for another member"}), 409
+
+    # R18: renewal gives 7 days starting from the day it is made
+    loan.due_date = date.today() + timedelta(days=RENEWAL_DAYS)
     return jsonify(loan.to_dict())
 
 
